@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>My Web Map</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+  }
+  #map {
+    width: 100%;
+    height: 100%;
+  }
+</style>
+</head>
+
+<body>
+<div id="map"></div>
+
+<script>
+// ---- Map initialization ----
+const map = L.map('map', {
+    center: [50, -100],
+    zoom: 4,
+    minZoom: 2,
+    worldCopyJump: false,
+    maxBoundsViscosity: 1.0,
+    attributionControl: false
+});
+
+L.control.attribution({ prefix: false }).addTo(map);
+
+// ---- World extent ----
+const bounds = L.latLngBounds(L.latLng(-90,-180), L.latLng(90,180));
+map.setMaxBounds(bounds);
+
+// ---- Basemaps ----
+
+// 1. OSM Standard
+const basemapOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 25,
+    noWrap: true,
+    bounds: bounds,
+    attribution: '© OpenStreetMap contributors'
+});
+
+// 2. ESRI World Topo
+const basemapTopo = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+    {
+        maxZoom: 25,
+        attribution: 'Tiles © Esri'
+    }
+);
+
+// 3. ESRI World Imagery (Satellite)
+const basemapSatellite = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    {
+        maxZoom: 25,
+        attribution: 'Tiles © Esri'
+    }
+);
+
+// 4. OpenTopoMap (Topographic map)
+const basemapOpenTopo = L.tileLayer(
+    'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    {
+        maxZoom: 17,
+        attribution: '© OpenTopoMap (CC-BY-SA)'
+    }
+);
+
+// 5. CartoDB Positron (Clean, no clutter)
+const basemapLight = L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+    {
+        maxZoom: 25,
+        attribution: '© CartoDB'
+    }
+);
+
+// 6. CartoDB Dark Matter (Dark mode)
+const basemapDark = L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+    {
+        maxZoom: 25,
+        attribution: '© CartoDB'
+    }
+);
+
+// 7. Esri Hillshade (3D)
+const basemapHillshade = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}',
+    { maxZoom: 20, attribution: '© Esri' }
+);
+
+
+// Add one basemap by default
+basemapOSM.addTo(map);
+
+
+const baseMaps = {
+    "OpenStreetMap": basemapOSM,
+    "ESRI Topo": basemapTopo,
+    "ESRI Satellite": basemapSatellite,
+    "OpenTopoMap": basemapOpenTopo,
+    "Light Mode": basemapLight,
+    "Dark Mode": basemapDark,
+    "ESRI Hillshade (3D Look)": basemapHillshade
+};
+
+
+// ---- Overlay layer container ----
+const overlayLayers = {};
+
+// ---- Layer control ----
+const layerControl = L.control.layers(baseMaps, overlayLayers, {
+    collapsed: false
+}).addTo(map);
+
+// ---- Make map, overlayLayers, layerControl AVAILABLE globally ----
+window.map = map;
+window.overlayLayers = overlayLayers;
+window.layerControl = layerControl;
+
+</script>
+
+<!-- Load all your layers here -->
+
+<!-- <script src="file.js"></script> -->  <!-- properly commented -->   <!--reads layer directly from layers.js -->
+<script src="Layers_updating_By_Layers_json.js"></script>   <!-- reads layer undirectly from layers.jsons -->
+
+</body>
+</html>
