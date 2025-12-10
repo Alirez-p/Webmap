@@ -1,0 +1,17 @@
+[
+    {
+        "file": "track_3_line_TOR_v2_4326.geojson",
+        "name": "Track 3 Line",
+        "style": { "color": "red", "weight": 3 }
+    },
+    {
+        "file": "Track2_TOR_Final_4326.geojson",
+        "name": "Track 2 Line",
+        "style": { "color": "blue", "weight": 3 }
+    },
+    {
+        "file": "track1_line_TOR_v3_4326.geojson",
+        "name": "track1_line",
+        "style": { "color": "green", "weight": 5 }
+    }
+]
