@@ -1,35 +1,41 @@
-// Function to load a GeoJSON layer
-function addLayer(url, name, style, legendEntry) {
-    fetch(url)
-      .then(r => r.json())
-      .then(data => {
-          const layer = L.geoJSON(data, { style }).addTo(map);
+function addLayer(url, name, style) {
+  fetch(url)
+    .then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
+      return r.json();
+    })
+    .then(data => {
+      const layer = L.geoJSON(data, {
+        pane: window.geojsonPane || 'overlayPane',
+        interactive: true,
+        style: style,
 
-          overlayLayers[name] = layer;
-          layerControl.addOverlay(layer, name);
-
-          console.log("Loaded:", name);
-
-          // Add legend entry
-          if (legendEntry) {
-              addLegendItem(name, legendEntry.color, legendEntry.type);
-          }
-      })
-      .catch(err => console.error("Error loading " + name, err));
-}
-
-// ---- Load all layers from layers.json ----
-fetch("Layers.json")
-  .then(r => r.json())
-  .then(list => {
-
-      list.forEach(item => {
-          addLayer(
-              "Data/" + item.file,
-              item.name,
-              item.style,
-              { color: item.style.color, type: "line" }
-          );
+        // ✅ attach layer name to each feature layer, then hook selection
+        onEachFeature: function (feature, lyr) {
+          lyr._layerName = name;                  // <--- this is the key
+          window.attachSelectableFeature(feature, lyr);
+        }
       });
 
-  });
+      window.overlayLayers[name] = layer;
+      window.layerControl.addOverlay(layer, name);
+
+      // ✅ optional legend (won't crash)
+      if (typeof window.addLegendItem === "function") {
+        window.addLegendItem(name, style);
+      }
+
+      console.log("Loaded:", name, "Features:", data.features ? data.features.length : "n/a");
+    })
+    .catch(err => console.error("Error loading layer:", name, url, err));
+}
+
+fetch("Layers.json")
+  .then(r => {
+    if (!r.ok) throw new Error(`HTTP ${r.status} for Layers.json`);
+    return r.json();
+  })
+  .then(list => {
+    list.forEach(item => addLayer("Data/" + item.file, item.name, item.style));
+  })
+  .catch(err => console.error("Error loading Layers.json", err));
