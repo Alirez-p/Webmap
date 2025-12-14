@@ -2,12 +2,18 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>My Web Map </title>
+<title>My Web Map</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+
+<!-- ✅ Icon library -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
 
 <style>
   html, body { margin: 0; padding: 0; height: 100%; }
@@ -29,14 +35,27 @@
 
   /* better hit testing for lines */
   .leaflet-interactive { pointer-events: stroke; }
+
+  /* ✅ selection toggle icon styling */
+  .sel-btn {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    background: white;
+    cursor: pointer;
+    user-select: none;
+  }
+  .sel-btn i { font-size: 16px; }
+  .sel-on  { color: #18a558; }  /* green */
+  .sel-off { color: #d64545; }  /* red */
 </style>
 </head>
 
 <body>
 <div id="map"></div>
 
-<div id="info"
-     style="position:absolute; bottom:10px; left:10px; z-index:1000; background:white; padding:8px 10px; border:1px solid #aaa; font-family:Arial; font-size:12px;">
+<div id="info">
   <b>Info</b><br>Turn on a layer, then click a feature.
 </div>
 
@@ -56,7 +75,9 @@ const map = L.map('map', {
 
 L.control.attribution({ prefix: false }).addTo(map);
 
-// ---- World extent (optional but fine)
+const infoDiv = document.getElementById('info');
+
+// ---- World extent (optional)
 const bounds = L.latLngBounds(L.latLng(-90,-180), L.latLng(90,180));
 map.setMaxBounds(bounds);
 
@@ -100,7 +121,7 @@ const basemapHillshade = L.tileLayer(
   { maxZoom: 20, attribution: '© Esri' }
 );
 
-// Add default basemap
+// default
 basemapOSM.addTo(map);
 
 const baseMaps = {
@@ -113,26 +134,186 @@ const baseMaps = {
   "ESRI Hillshade": basemapHillshade
 };
 
-
-
-// overlays container + layer control
+// overlays + layer control
 const overlayLayers = {};
 const layerControl = L.control.layers(baseMaps, overlayLayers, { collapsed: false }).addTo(map);
 
-// expose globals for loader script
+// expose globals (loader uses these)
 window.map = map;
 window.overlayLayers = overlayLayers;
 window.layerControl = layerControl;
 
-// Put GeoJSON above tiles and make sure it can receive mouse events
+// ================================
+// PANE FOR GEOJSON
+// ================================
 map.createPane('geojsonPane');
-map.getPane('geojsonPane').style.zIndex = 650;      // tiles are ~200
+map.getPane('geojsonPane').style.zIndex = 650;
 map.getPane('geojsonPane').style.pointerEvents = 'auto';
 window.geojsonPane = 'geojsonPane';
 
 
 // ================================
-// BUFFER TOOL (UI)
+// GLOBAL SELECTION (works for ANY layer)
+// ================================
+let selectionEnabled = true;
+let selected = null;
+window.__selectedLayer = null;
+
+function clearSelection() {
+  if (selected && selected.setStyle && selected._origStyle) {
+    try { selected.setStyle(selected._origStyle); } catch (e) {}
+  }
+  selected = null;
+  window.__selectedLayer = null;
+
+  if (typeof window.__updateSelectedMeasureUI === "function") {
+    window.__updateSelectedMeasureUI();
+  }
+
+  infoDiv.innerHTML = `<b>Info</b><br>Turn on a layer, then click a feature.`;
+}
+
+function fmtCoord(x) {
+  return Number.isFinite(x) ? x.toFixed(6) : "";
+}
+
+function makeSelectable(layer, name = "Feature") {
+  if (!layer) return;
+
+  layer._layerName = name;
+
+  // ensure interactive
+  if (layer.options) layer.options.interactive = true;
+
+  layer.on("click", (e) => {
+    // ✅ selection OFF => do nothing
+    if (!selectionEnabled) {
+      L.DomEvent.stopPropagation(e);
+      return;
+    }
+
+    // click same feature again => deselect
+    if (selected === layer) {
+      clearSelection();
+      L.DomEvent.stopPropagation(e);
+      return;
+    }
+
+    // restore previous (only for vector paths)
+    if (selected && selected.setStyle && selected._origStyle) {
+      try { selected.setStyle(selected._origStyle); } catch (err) {}
+    }
+
+    // store original style once (only for vector paths)
+    if (layer.setStyle && !layer._origStyle) {
+      layer._origStyle = {
+        color: layer.options?.color || "#3388ff",
+        weight: layer.options?.weight || 3,
+        opacity: layer.options?.opacity ?? 1,
+        fillColor: layer.options?.fillColor,
+        fillOpacity: layer.options?.fillOpacity
+      };
+    }
+
+    // highlight (only for vector paths)
+    if (layer.setStyle) layer.setStyle({ color: "yellow", weight: 6, opacity: 1 });
+    if (layer.bringToFront) layer.bringToFront();
+
+    selected = layer;
+    window.__selectedLayer = layer;
+
+    if (typeof window.__updateSelectedMeasureUI === "function") {
+      window.__updateSelectedMeasureUI();
+    }
+
+    const layerName = layer._layerName || "Unnamed";
+
+    // ✅ If this is a marker/point, show lat/lng
+    let extra = "";
+    if (typeof layer.getLatLng === "function") {
+      const ll = layer.getLatLng();
+      extra = `<br><b>Lat:</b> ${fmtCoord(ll.lat)}<br><b>Lng:</b> ${fmtCoord(ll.lng)}`;
+    }
+
+    const html = `<b>Layer:</b> ${layerName}${extra}`;
+
+    if (layer.bindPopup) layer.bindPopup(html).openPopup();
+    infoDiv.innerHTML = `<b>Selected</b><br>${html}`;
+
+    L.DomEvent.stopPropagation(e);
+  });
+}
+
+// This is what your loader calls for GeoJSON features
+window.attachSelectableFeature = function(feature, layer) {
+  makeSelectable(layer, layer._layerName || "Layer");
+};
+
+
+// ================================
+// ✅ SELECTION ICON CONTROL (single button)
+// ================================
+const SelectionIconControl = L.Control.extend({
+  onAdd: function () {
+    const container = L.DomUtil.create('div', 'leaflet-bar');
+    const btn = L.DomUtil.create('a', 'sel-btn', container);
+    btn.href = "#";
+    btn.title = "Toggle selection (ON/OFF)";
+
+    btn.innerHTML = `<i class="fa-solid fa-mouse-pointer sel-on"></i>`;
+
+    function refresh() {
+      const icon = btn.querySelector("i");
+      icon.classList.remove("sel-on", "sel-off");
+      icon.classList.add(selectionEnabled ? "sel-on" : "sel-off");
+      btn.title = selectionEnabled ? "Selection: ON (click to turn OFF)" : "Selection: OFF (click to turn ON)";
+    }
+
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      selectionEnabled = !selectionEnabled;
+      if (!selectionEnabled) clearSelection();
+      refresh();
+    });
+
+    L.DomEvent.disableClickPropagation(container);
+    L.DomEvent.disableScrollPropagation(container);
+
+    refresh();
+    return container;
+  }
+});
+map.addControl(new SelectionIconControl({ position: 'topright' }));
+
+
+// ================================
+// DRAW (leaflet-draw)
+// ================================
+const drawnItems = new L.FeatureGroup().addTo(map);
+
+const drawControl = new L.Control.Draw({
+  position: "topright",
+  edit: { featureGroup: drawnItems },
+  draw: {
+    polygon: true,
+    polyline: true,
+    rectangle: true,
+    circle: false,
+    marker: true,
+    circlemarker: false
+  }
+});
+map.addControl(drawControl);
+
+map.on(L.Draw.Event.CREATED, function (e) {
+  const layer = e.layer;
+  drawnItems.addLayer(layer);
+  makeSelectable(layer, "Draw");
+});
+
+
+// ================================
+// BUFFER TOOL
 // ================================
 let bufferLayer = null;
 
@@ -164,11 +345,9 @@ const BufferControl = L.Control.extend({
       </div>
     `;
 
-    // prevent map dragging/zoom when interacting with the control
     L.DomEvent.disableClickPropagation(div);
     L.DomEvent.disableScrollPropagation(div);
 
-    // events
     div.querySelector('#bufBtn').addEventListener('click', () => {
       if (!window.__selectedLayer) {
         alert("Select a feature first.");
@@ -183,26 +362,19 @@ const BufferControl = L.Control.extend({
         return;
       }
 
-      // GeoJSON from selected Leaflet layer
       const gj = window.__selectedLayer.toGeoJSON();
-
-      // Turf buffer (works best if your GeoJSON is in EPSG:4326, which Leaflet expects)
       const buffered = turf.buffer(gj, dist, { units: unit });
 
-      // remove old buffer
-      if (bufferLayer) {
-        map.removeLayer(bufferLayer);
-        bufferLayer = null;
-      }
+      if (bufferLayer) map.removeLayer(bufferLayer);
 
-      // draw buffer
       bufferLayer = L.geoJSON(buffered, {
         pane: window.geojsonPane || 'overlayPane',
-        interactive: false,
+        interactive: true,
         style: { weight: 2, opacity: 1, fillOpacity: 0.15 }
       }).addTo(map);
 
-      // zoom to buffer
+      bufferLayer.eachLayer(sub => makeSelectable(sub, "Buffer"));
+
       try { map.fitBounds(bufferLayer.getBounds(), { padding: [20, 20] }); } catch (e) {}
     });
 
@@ -216,16 +388,15 @@ const BufferControl = L.Control.extend({
     return div;
   }
 });
-
 map.addControl(new BufferControl({ position: 'topright' }));
 
 
 // ================================
-// MEASURE TOOL (Length + Area)
+// MANUAL MEASURE TOOL (click points)
 // ================================
 const measureGroup = L.featureGroup().addTo(map);
 
-let measuring = null;           // "length" | "area" | null
+let measuring = null; // "length" | "area" | null
 let measurePts = [];
 let tempLine = null;
 let tempPoly = null;
@@ -235,10 +406,8 @@ function formatLength(m) {
   if (m >= 1000) return (m / 1000).toFixed(3) + " km";
   return m.toFixed(2) + " m";
 }
-
 function formatArea(m2) {
-  if (m2 >= 1e6) return (m2 / 1e6).toFixed(3) + " km²";
-  if (m2 >= 1e4) return (m2 / 1e4).toFixed(3) + " ha";
+  if (m2 >= 1e5) return (m2 / 1e6).toFixed(3) + " km²";
   return m2.toFixed(2) + " m²";
 }
 
@@ -259,29 +428,24 @@ function startMeasure(mode) {
   infoDiv.innerHTML = `<b>Measure</b><br>${mode === "length" ? "Length" : "Area"} mode: click points, double-click to finish.`;
 }
 
-// prevent double click zoom while measuring
 map.on('dblclick', (e) => {
   if (!measuring) return;
   L.DomEvent.stop(e);
 });
 
-// update temp shapes
 function updateMeasureGraphics(cursorLatLng) {
   if (!measuring || measurePts.length === 0) return;
 
   const latlngs = [...measurePts, cursorLatLng];
 
-  // temp line
   if (tempLine) measureGroup.removeLayer(tempLine);
   tempLine = L.polyline(latlngs, { weight: 2, opacity: 1 }).addTo(measureGroup);
 
-  // temp polygon (area mode)
   if (measuring === "area") {
     if (tempPoly) measureGroup.removeLayer(tempPoly);
     tempPoly = L.polygon(latlngs, { weight: 2, opacity: 1, fillOpacity: 0.15 }).addTo(measureGroup);
   }
 
-  // tooltip text
   let text = "";
   const coords = latlngs.map(ll => [ll.lng, ll.lat]);
 
@@ -304,44 +468,34 @@ function updateMeasureGraphics(cursorLatLng) {
     .addTo(map);
 }
 
-// click to add point
 map.on('click', (e) => {
   if (!measuring) return;
-
   measurePts.push(e.latlng);
-
-  // add a vertex marker
   L.circleMarker(e.latlng, { radius: 4, opacity: 1, fillOpacity: 1 }).addTo(measureGroup);
 });
 
-// mouse move for live preview
 map.on('mousemove', (e) => {
   if (!measuring) return;
   updateMeasureGraphics(e.latlng);
 });
 
-// double click to finish measurement
 map.on('dblclick', (e) => {
   if (!measuring) return;
 
-  // finalize with current mouse position not needed; just compute from measurePts
   if (measuring === "length" && measurePts.length >= 2) {
     const coords = measurePts.map(ll => [ll.lng, ll.lat]);
     const line = turf.lineString(coords);
     const km = turf.length(line, { units: "kilometers" });
-    const msg = "Length: " + formatLength(km * 1000);
-    infoDiv.innerHTML = `<b>Measure result</b><br>${msg}`;
+    infoDiv.innerHTML = `<b>Measure result</b><br>Length: ${formatLength(km * 1000)}`;
   }
 
   if (measuring === "area" && measurePts.length >= 3) {
     const coords = measurePts.map(ll => [ll.lng, ll.lat]);
     const poly = turf.polygon([[...coords, coords[0]]]);
     const a = turf.area(poly);
-    const msg = "Area: " + formatArea(a);
-    infoDiv.innerHTML = `<b>Measure result</b><br>${msg}`;
+    infoDiv.innerHTML = `<b>Measure result</b><br>Area: ${formatArea(a)}`;
   }
 
-  // stop measuring (keep drawn result)
   measuring = null;
   map.getContainer().style.cursor = '';
   if (tempTooltip) { map.removeLayer(tempTooltip); tempTooltip = null; }
@@ -375,54 +529,102 @@ const MeasureControl = L.Control.extend({
     return div;
   }
 });
-
 map.addControl(new MeasureControl({ position: 'topright' }));
 
+
 // ================================
-// SELECTION
+// TOGGLEABLE "MEASURE SELECTED FEATURE"
 // ================================
-const infoDiv = document.getElementById('info');
-let selected = null;
+let selectedMeasureEnabled = false; // default OFF
 
-window.attachSelectableFeature = function(feature, layer) {
+function measureSelectedFeature(layer) {
+  if (!layer || !layer.toGeoJSON) return { ok: false, msg: "No selection." };
 
-  if (layer.options) layer.options.interactive = true;
+  const gj = layer.toGeoJSON();
+  const type = gj?.geometry?.type;
+  if (!type) return { ok: false, msg: "No geometry." };
 
-  layer.on('click', (e) => {
-    console.log("FEATURE CLICKED ✅", feature);
+  if (type === "LineString" || type === "MultiLineString") {
+    const km = turf.length(gj, { units: "kilometers" });
+    return { ok: true, kind: "Length", value: formatLength(km * 1000) };
+  }
 
-    // restore previous
-    if (selected) {
-      try { selected.setStyle(selected._origStyle); } catch (err) {}
+  if (type === "Polygon" || type === "MultiPolygon") {
+    const a = turf.area(gj);
+    return { ok: true, kind: "Area", value: formatArea(a) };
+  }
+
+  if (type === "Point" || type === "MultiPoint") {
+    // (optional) you can show coords here too, but your popup already shows them
+    return { ok: true, kind: "Info", value: "Point selected (see popup for lat/lng)." };
+  }
+
+  return { ok: true, kind: "Info", value: `Selected: ${type}` };
+}
+
+const SelectedMeasureControl = L.Control.extend({
+  onAdd: function () {
+    const div = L.DomUtil.create('div', 'leaflet-bar');
+    div.style.background = 'white';
+    div.style.padding = '8px';
+    div.style.fontFamily = 'Arial, sans-serif';
+    div.style.fontSize = '12px';
+    div.style.minWidth = '160px';
+
+    div.innerHTML = `
+      <div style="font-weight:bold; margin-bottom:6px;">Selected Measure</div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button id="selToggle" style="padding:3px 6px; cursor:pointer;">Enable</button>
+        <button id="selMeasureBtn" style="padding:3px 6px; cursor:pointer;" disabled>Measure</button>
+        <button id="selClear" style="padding:3px 6px; cursor:pointer;" disabled>Clear</button>
+      </div>
+      <div id="selMeasureText" style="margin-top:6px;">Disabled</div>
+    `;
+
+    L.DomEvent.disableClickPropagation(div);
+    L.DomEvent.disableScrollPropagation(div);
+
+    const btnToggle = div.querySelector('#selToggle');
+    const btnMeasure = div.querySelector('#selMeasureBtn');
+    const btnClear = div.querySelector('#selClear');
+    const out = div.querySelector('#selMeasureText');
+
+    function render() {
+      if (!selectedMeasureEnabled) {
+        btnToggle.textContent = "Enable";
+        btnMeasure.disabled = true;
+        btnClear.disabled = true;
+        out.textContent = "Disabled";
+        return;
+      }
+
+      btnToggle.textContent = "Disable";
+      btnMeasure.disabled = false;
+      btnClear.disabled = false;
+
+      if (!window.__selectedLayer) {
+        out.textContent = "Select a feature";
+        return;
+      }
+
+      const res = measureSelectedFeature(window.__selectedLayer);
+      if (!res.ok) out.textContent = res.msg;
+      else if (res.kind === "Info") out.textContent = res.value;
+      else out.innerHTML = `<b>${res.kind}:</b> ${res.value}`;
     }
 
-    // store original style ONCE
-    if (!layer._origStyle) {
-      layer._origStyle = {
-        color: layer.options.color || '#3388ff',
-        weight: layer.options.weight || 3,
-        opacity: layer.options.opacity ?? 1,
-        fillColor: layer.options.fillColor,
-        fillOpacity: layer.options.fillOpacity
-      };
-    }
+    btnToggle.onclick = () => { selectedMeasureEnabled = !selectedMeasureEnabled; render(); };
+    btnMeasure.onclick = () => { if (!selectedMeasureEnabled) return; render(); };
+    btnClear.onclick = () => { out.textContent = selectedMeasureEnabled ? "Select a feature" : "Disabled"; };
 
-    // highlight
-    if (layer.setStyle) layer.setStyle({ color: 'yellow', weight: 6, opacity: 1 });
-    if (layer.bringToFront) layer.bringToFront();
-    selected = layer;
-    window.__selectedLayer = layer;
+    window.__updateSelectedMeasureUI = () => { if (!selectedMeasureEnabled) return; render(); };
 
-    // ✅ Only show layer name
-    const layerName = layer._layerName || "Unnamed layer";
-    const html = `<b>Layer:</b> ${layerName}`;
+    render();
+    return div;
+  }
+});
+map.addControl(new SelectedMeasureControl({ position: 'topright' }));
 
-    layer.bindPopup(html).openPopup();
-    infoDiv.innerHTML = `<b>Selected</b><br>${html}`;
-
-    L.DomEvent.stopPropagation(e);
-  });
-};
 </script>
 
 <!-- Load all GeoJSON layers -->
