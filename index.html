@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 
-<!-- ✅ Icon library -->
+<!-- Icon library -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
 
 <style>
@@ -36,7 +36,7 @@
   /* better hit testing for lines */
   .leaflet-interactive { pointer-events: stroke; }
 
-  /* ✅ selection toggle icon styling */
+  /* selection toggle icon styling */
   .sel-btn {
     width: 32px;
     height: 32px;
@@ -72,12 +72,11 @@ const map = L.map('map', {
   attributionControl: false,
   doubleClickZoom: false
 });
-
 L.control.attribution({ prefix: false }).addTo(map);
 
 const infoDiv = document.getElementById('info');
 
-// ---- World extent (optional)
+// world extent
 const bounds = L.latLngBounds(L.latLng(-90,-180), L.latLng(90,180));
 map.setMaxBounds(bounds);
 
@@ -90,38 +89,31 @@ const basemapOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.p
   bounds: bounds,
   attribution: '© OpenStreetMap contributors'
 });
-
 const basemapTopo = L.tileLayer(
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
   { maxZoom: 25, attribution: 'Tiles © Esri' }
 );
-
 const basemapSatellite = L.tileLayer(
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
   { maxZoom: 25, attribution: 'Tiles © Esri' }
 );
-
 const basemapOpenTopo = L.tileLayer(
   'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
   { maxZoom: 17, attribution: '© OpenTopoMap (CC-BY-SA)' }
 );
-
 const basemapLight = L.tileLayer(
   'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
   { maxZoom: 25, attribution: '© CartoDB' }
 );
-
 const basemapDark = L.tileLayer(
   'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
   { maxZoom: 25, attribution: '© CartoDB' }
 );
-
 const basemapHillshade = L.tileLayer(
   'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}',
   { maxZoom: 20, attribution: '© Esri' }
 );
 
-// default
 basemapOSM.addTo(map);
 
 const baseMaps = {
@@ -153,6 +145,51 @@ window.geojsonPane = 'geojsonPane';
 
 
 // ================================
+// HELPERS
+// ================================
+function fmtCoord(x) { return Number.isFinite(x) ? x.toFixed(6) : ""; }
+
+function formatLength(m) {
+  if (m >= 1000) return (m / 1000).toFixed(3) + " km";
+  return m.toFixed(2) + " m";
+}
+
+function formatArea(m2) {
+  if (m2 >= 1e6) return (m2 / 1e6).toFixed(3) + " km²";
+  return m2.toFixed(2) + " m²";
+}
+
+function getMeasurementHTML(layer) {
+  // Marker/Point
+  if (typeof layer.getLatLng === "function") {
+    const ll = layer.getLatLng();
+    return `
+      <b>Lat:</b> ${fmtCoord(ll.lat)}<br>
+      <b>Lng:</b> ${fmtCoord(ll.lng)}
+    `;
+  }
+
+  // Lines/Polygons via GeoJSON
+  if (!layer.toGeoJSON) return "";
+
+  const gj = layer.toGeoJSON();
+  const type = gj?.geometry?.type;
+
+  if (type === "LineString" || type === "MultiLineString") {
+    const km = turf.length(gj, { units: "kilometers" });
+    return `<b>Length:</b> ${formatLength(km * 1000)}`;
+  }
+
+  if (type === "Polygon" || type === "MultiPolygon") {
+    const a = turf.area(gj);
+    return `<b>Area:</b> ${formatArea(a)}`;
+  }
+
+  return type ? `<b>Type:</b> ${type}` : "";
+}
+
+
+// ================================
 // GLOBAL SELECTION (works for ANY layer)
 // ================================
 let selectionEnabled = true;
@@ -165,16 +202,7 @@ function clearSelection() {
   }
   selected = null;
   window.__selectedLayer = null;
-
-  if (typeof window.__updateSelectedMeasureUI === "function") {
-    window.__updateSelectedMeasureUI();
-  }
-
   infoDiv.innerHTML = `<b>Info</b><br>Turn on a layer, then click a feature.`;
-}
-
-function fmtCoord(x) {
-  return Number.isFinite(x) ? x.toFixed(6) : "";
 }
 
 function makeSelectable(layer, name = "Feature") {
@@ -186,7 +214,6 @@ function makeSelectable(layer, name = "Feature") {
   if (layer.options) layer.options.interactive = true;
 
   layer.on("click", (e) => {
-    // ✅ selection OFF => do nothing
     if (!selectionEnabled) {
       L.DomEvent.stopPropagation(e);
       return;
@@ -199,12 +226,12 @@ function makeSelectable(layer, name = "Feature") {
       return;
     }
 
-    // restore previous (only for vector paths)
+    // restore previous (vector paths only)
     if (selected && selected.setStyle && selected._origStyle) {
       try { selected.setStyle(selected._origStyle); } catch (err) {}
     }
 
-    // store original style once (only for vector paths)
+    // store original style once (vector paths only)
     if (layer.setStyle && !layer._origStyle) {
       layer._origStyle = {
         color: layer.options?.color || "#3388ff",
@@ -215,43 +242,39 @@ function makeSelectable(layer, name = "Feature") {
       };
     }
 
-    // highlight (only for vector paths)
+    // highlight (vector paths only)
     if (layer.setStyle) layer.setStyle({ color: "yellow", weight: 6, opacity: 1 });
     if (layer.bringToFront) layer.bringToFront();
 
     selected = layer;
     window.__selectedLayer = layer;
 
-    if (typeof window.__updateSelectedMeasureUI === "function") {
-      window.__updateSelectedMeasureUI();
-    }
-
     const layerName = layer._layerName || "Unnamed";
+    const measureHtml = getMeasurementHTML(layer);
 
-    // ✅ If this is a marker/point, show lat/lng
-    let extra = "";
-    if (typeof layer.getLatLng === "function") {
-      const ll = layer.getLatLng();
-      extra = `<br><b>Lat:</b> ${fmtCoord(ll.lat)}<br><b>Lng:</b> ${fmtCoord(ll.lng)}`;
-    }
+    const html = `
+      <b>Layer:</b> ${layerName}
+      ${measureHtml ? "<br>" + measureHtml : ""}
+    `;
 
-    const html = `<b>Layer:</b> ${layerName}${extra}`;
+    // popup at click
+    if (layer.bindPopup) layer.bindPopup(html).openPopup(e.latlng);
 
-    if (layer.bindPopup) layer.bindPopup(html).openPopup();
+    // info panel
     infoDiv.innerHTML = `<b>Selected</b><br>${html}`;
 
     L.DomEvent.stopPropagation(e);
   });
 }
 
-// This is what your loader calls for GeoJSON features
+// loader calls this for GeoJSON
 window.attachSelectableFeature = function(feature, layer) {
   makeSelectable(layer, layer._layerName || "Layer");
 };
 
 
 // ================================
-// ✅ SELECTION ICON CONTROL (single button)
+// SELECTION ICON CONTROL (single button)
 // ================================
 const SelectionIconControl = L.Control.extend({
   onAdd: function () {
@@ -259,7 +282,6 @@ const SelectionIconControl = L.Control.extend({
     const btn = L.DomUtil.create('a', 'sel-btn', container);
     btn.href = "#";
     btn.title = "Toggle selection (ON/OFF)";
-
     btn.innerHTML = `<i class="fa-solid fa-mouse-pointer sel-on"></i>`;
 
     function refresh() {
@@ -373,6 +395,7 @@ const BufferControl = L.Control.extend({
         style: { weight: 2, opacity: 1, fillOpacity: 0.15 }
       }).addTo(map);
 
+      // make buffer selectable
       bufferLayer.eachLayer(sub => makeSelectable(sub, "Buffer"));
 
       try { map.fitBounds(bufferLayer.getBounds(), { padding: [20, 20] }); } catch (e) {}
@@ -401,15 +424,6 @@ let measurePts = [];
 let tempLine = null;
 let tempPoly = null;
 let tempTooltip = null;
-
-function formatLength(m) {
-  if (m >= 1000) return (m / 1000).toFixed(3) + " km";
-  return m.toFixed(2) + " m";
-}
-function formatArea(m2) {
-  if (m2 >= 1e5) return (m2 / 1e6).toFixed(3) + " km²";
-  return m2.toFixed(2) + " m²";
-}
 
 function clearMeasure() {
   measureGroup.clearLayers();
@@ -530,100 +544,6 @@ const MeasureControl = L.Control.extend({
   }
 });
 map.addControl(new MeasureControl({ position: 'topright' }));
-
-
-// ================================
-// TOGGLEABLE "MEASURE SELECTED FEATURE"
-// ================================
-let selectedMeasureEnabled = false; // default OFF
-
-function measureSelectedFeature(layer) {
-  if (!layer || !layer.toGeoJSON) return { ok: false, msg: "No selection." };
-
-  const gj = layer.toGeoJSON();
-  const type = gj?.geometry?.type;
-  if (!type) return { ok: false, msg: "No geometry." };
-
-  if (type === "LineString" || type === "MultiLineString") {
-    const km = turf.length(gj, { units: "kilometers" });
-    return { ok: true, kind: "Length", value: formatLength(km * 1000) };
-  }
-
-  if (type === "Polygon" || type === "MultiPolygon") {
-    const a = turf.area(gj);
-    return { ok: true, kind: "Area", value: formatArea(a) };
-  }
-
-  if (type === "Point" || type === "MultiPoint") {
-    // (optional) you can show coords here too, but your popup already shows them
-    return { ok: true, kind: "Info", value: "Point selected (see popup for lat/lng)." };
-  }
-
-  return { ok: true, kind: "Info", value: `Selected: ${type}` };
-}
-
-const SelectedMeasureControl = L.Control.extend({
-  onAdd: function () {
-    const div = L.DomUtil.create('div', 'leaflet-bar');
-    div.style.background = 'white';
-    div.style.padding = '8px';
-    div.style.fontFamily = 'Arial, sans-serif';
-    div.style.fontSize = '12px';
-    div.style.minWidth = '160px';
-
-    div.innerHTML = `
-      <div style="font-weight:bold; margin-bottom:6px;">Selected Measure</div>
-      <div style="display:flex; gap:6px; flex-wrap:wrap;">
-        <button id="selToggle" style="padding:3px 6px; cursor:pointer;">Enable</button>
-        <button id="selMeasureBtn" style="padding:3px 6px; cursor:pointer;" disabled>Measure</button>
-        <button id="selClear" style="padding:3px 6px; cursor:pointer;" disabled>Clear</button>
-      </div>
-      <div id="selMeasureText" style="margin-top:6px;">Disabled</div>
-    `;
-
-    L.DomEvent.disableClickPropagation(div);
-    L.DomEvent.disableScrollPropagation(div);
-
-    const btnToggle = div.querySelector('#selToggle');
-    const btnMeasure = div.querySelector('#selMeasureBtn');
-    const btnClear = div.querySelector('#selClear');
-    const out = div.querySelector('#selMeasureText');
-
-    function render() {
-      if (!selectedMeasureEnabled) {
-        btnToggle.textContent = "Enable";
-        btnMeasure.disabled = true;
-        btnClear.disabled = true;
-        out.textContent = "Disabled";
-        return;
-      }
-
-      btnToggle.textContent = "Disable";
-      btnMeasure.disabled = false;
-      btnClear.disabled = false;
-
-      if (!window.__selectedLayer) {
-        out.textContent = "Select a feature";
-        return;
-      }
-
-      const res = measureSelectedFeature(window.__selectedLayer);
-      if (!res.ok) out.textContent = res.msg;
-      else if (res.kind === "Info") out.textContent = res.value;
-      else out.innerHTML = `<b>${res.kind}:</b> ${res.value}`;
-    }
-
-    btnToggle.onclick = () => { selectedMeasureEnabled = !selectedMeasureEnabled; render(); };
-    btnMeasure.onclick = () => { if (!selectedMeasureEnabled) return; render(); };
-    btnClear.onclick = () => { out.textContent = selectedMeasureEnabled ? "Select a feature" : "Disabled"; };
-
-    window.__updateSelectedMeasureUI = () => { if (!selectedMeasureEnabled) return; render(); };
-
-    render();
-    return div;
-  }
-});
-map.addControl(new SelectedMeasureControl({ position: 'topright' }));
 
 </script>
 
