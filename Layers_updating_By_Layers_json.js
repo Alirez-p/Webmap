@@ -10,9 +10,9 @@ function addLayer(url, name, style) {
         interactive: true,
         style: style,
 
-        // ✅ attach layer name to each feature layer, then hook selection
+        // attach layer name to each feature, then hook selection
         onEachFeature: function (feature, lyr) {
-          lyr._layerName = name;                  // <--- this is the key
+          lyr._layerName = name;
           window.attachSelectableFeature(feature, lyr);
         }
       });
@@ -20,7 +20,7 @@ function addLayer(url, name, style) {
       window.overlayLayers[name] = layer;
       window.layerControl.addOverlay(layer, name);
 
-      // ✅ optional legend (won't crash)
+      // optional legend (won't crash)
       if (typeof window.addLegendItem === "function") {
         window.addLegendItem(name, style);
       }
