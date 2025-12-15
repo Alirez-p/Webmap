@@ -3,7 +3,7 @@
     {
         "file": "waterbody.geojson",
         "name": "waterbody",
-        "style": { "color": "green", "weight": 2 }
+        "style": { "color": "blue", "weight": 2 }
     },
     {
         "file": "watercourse.geojson",
@@ -11,3 +11,4 @@
         "style": { "color": "brown", "weight": 1 }
     }
 ]
+
