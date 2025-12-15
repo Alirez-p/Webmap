@@ -11,7 +11,7 @@
     },
     {
         "file": "track1_line_TOR_v3_4326.geojson",
-        "name": "track1_line",
+        "name": "Track 1 line",
         "style": { "color": "green", "weight": 5 }
     }
 ]
