@@ -1,17 +1,13 @@
 [
+
     {
-        "file": "track_3_line_TOR_v2_4326.geojson",
-        "name": "Track 3 Line",
-        "style": { "color": "red", "weight": 3 }
+        "file": "waterbody.geojson",
+        "name": "waterbody",
+        "style": { "color": "green", "weight": 2 }
     },
     {
-        "file": "Track2_TOR_Final_4326.geojson",
-        "name": "Track 2 Line",
-        "style": { "color": "blue", "weight": 3 }
-    },
-    {
-        "file": "track1_line_TOR_v3_4326.geojson",
-        "name": "Track 1 line",
-        "style": { "color": "green", "weight": 5 }
+        "file": "watercourse.geojson",
+        "name": "watercourse",
+        "style": { "color": "brown", "weight": 1 }
     }
 ]

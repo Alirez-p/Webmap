@@ -64,8 +64,8 @@
 // MAP
 // ================================
 const map = L.map('map', {
-  center: [50, -100],
-  zoom: 4,
+  center: [53, -114],
+  zoom: 6,
   minZoom: 2,
   worldCopyJump: false,
   maxBoundsViscosity: 1.0,
@@ -155,7 +155,7 @@ function formatLength(m) {
 }
 
 function formatArea(m2) {
-  if (m2 >= 1e6) return (m2 / 1e6).toFixed(3) + " km²";
+  if (m2 >= 1e5) return (m2 / 1e6).toFixed(3) + " km²";
   return m2.toFixed(2) + " m²";
 }
 
@@ -186,6 +186,49 @@ function getMeasurementHTML(layer) {
   }
 
   return type ? `<b>Type:</b> ${type}` : "";
+}
+
+
+// Add attributes to popup
+function escapeHtml(v) {
+  return String(v)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function getAttributesHTML(layer, maxRows = 20) {
+  const props = layer?._props;
+  if (!props || typeof props !== "object") return "";
+
+  const keys = Object.keys(props).filter(k => props[k] !== null && props[k] !== undefined && props[k] !== "");
+  if (keys.length === 0) return "";
+
+  keys.sort();
+
+  let rows = "";
+  for (let i = 0; i < Math.min(keys.length, maxRows); i++) {
+    const k = keys[i];
+    const v = props[k];
+
+    // stringify objects safely
+    const val = (typeof v === "object") ? JSON.stringify(v) : String(v);
+
+    rows += `<tr>
+      <td style="padding:2px 6px; font-weight:bold; vertical-align:top;">${escapeHtml(k)}</td>
+      <td style="padding:2px 6px;">${escapeHtml(val)}</td>
+    </tr>`;
+  }
+
+  const more = keys.length > maxRows ? `<div style="margin-top:4px; color:#666;">…and ${keys.length - maxRows} more</div>` : "";
+
+  return `
+    <div style="margin-top:6px;"><b>Attributes</b></div>
+    <table style="border-collapse:collapse; margin-top:4px;">${rows}</table>
+    ${more}
+  `;
 }
 
 
@@ -251,10 +294,14 @@ function makeSelectable(layer, name = "Feature") {
 
     const layerName = layer._layerName || "Unnamed";
     const measureHtml = getMeasurementHTML(layer);
+    const attrHtml = getAttributesHTML(layer);
+
 
     const html = `
       <b>Layer:</b> ${layerName}
       ${measureHtml ? "<br>" + measureHtml : ""}
+      ${attrHtml ? "<br>" + attrHtml : ""}
+
     `;
 
     // popup at click
@@ -269,8 +316,11 @@ function makeSelectable(layer, name = "Feature") {
 
 // loader calls this for GeoJSON
 window.attachSelectableFeature = function(feature, layer) {
+  // ✅ store attributes so popup can show them
+  layer._props = (feature && feature.properties) ? feature.properties : {};
   makeSelectable(layer, layer._layerName || "Layer");
 };
+
 
 
 // ================================
